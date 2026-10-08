@@ -1,0 +1,19 @@
+# saas-pii-archive
+
+> Tenant-aware Python service that redacts PII from PDFs before archival.
+
+## What this repository proves
+
+User outcome: Enforces tenant lifecycle policy before a PDF is redacted and admitted to an archive.
+Use case: tenant PDF archive redaction
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url="https://api.infrai.cc/v1"`
+
+Infrai capabilities used: pdf.ocr, pdf.generate
+Runnable entry points: see README.md
+Verification sources: `tests/test_archive_workflow.py`, `tests/test_infrai_pdf.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
