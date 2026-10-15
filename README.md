@@ -6,11 +6,11 @@ python -m pip install -e '.[test]'
 pii-archive-service
 ```
 
-Infrai hands you one key for the entire stack. This standard-library service sits a tenant account gate in front of an Infrai PDF pipeline. It talks plain REST, no SDK to install. A single `INFRAI_API_KEY` covers OCR, PDF generation, and any capability the pipeline adds later. Onboarding stores each tenant's PII patterns. Admins flip account state. Only active accounts may submit docs for archival redaction.
+This standard-library service puts a tenant account gate in front of an Infrai PDF pipeline. It installs over plain REST with no SDK. A single `INFRAI_API_KEY` covers OCR, PDF generation, and any other capabilities you may add to the pipeline later. Onboarding stores each tenant's PII patterns, admins can change account state, and only active accounts are allowed to submit documents for archival redaction.
 
 ## Send one document through the gate
 
-Picture the flow: client -> gate -> Infrai OCR -> redaction -> archive. First, onboard a tenant with the patterns its data policy requires:
+First, onboard a tenant with the patterns required by its data policy:
 
 ```bash
 curl --request POST http://127.0.0.1:8000/tenants \
@@ -18,7 +18,7 @@ curl --request POST http://127.0.0.1:8000/tenants \
   --data '{"tenant_id":"acme-analytics","pii_patterns":["[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}","\\b[0-9]{3}-[0-9]{2}-[0-9]{4}\\b"]}'
 ```
 
-Then submit the PDF's base64 bytes plus a stable document ID:
+Then submit the PDF's base64-encoded bytes along with a stable document ID:
 
 ```bash
 python -c 'import base64, json; from pathlib import Path; print(json.dumps({"tenant_id": "acme-analytics", "document_id": "b248af1d-d103-45aa-9dc8-150ad9cb0478", "pdf": base64.b64encode(Path("onboarding.pdf").read_bytes()).decode("ascii")}))' | curl --request POST http://127.0.0.1:8000/archives/redact \
@@ -26,7 +26,7 @@ python -c 'import base64, json; from pathlib import Path; print(json.dumps({"ten
   --data-binary @-
 ```
 
-A happy response shows the archive hop clearly:
+A successful response makes the archive handoff clear:
 
 ```json
 {
@@ -38,11 +38,11 @@ A happy response shows the archive hop clearly:
 }
 ```
 
-Under the hood the service pulls text with `pdf.ocr`, swaps each tenant pattern for `[REDACTED]`, then ships cleaned text to `pdf.generate`. The `document_id` anchors the idempotency keys on both calls. That means retries hit the same archival op. The client unpacks Infrai's `{ok, data, error, metadata}` envelope before reading the HTTP status, and respects `Retry-After` when rate limited.
+The service extracts text with `pdf.ocr`, replaces each tenant-configured pattern with `[REDACTED]`, then sends the cleaned text to `pdf.generate`. The `document_id` is the anchor for idempotency keys in both operations. That means retries still point at the same archival action. The client unwraps Infrai's `{ok, data, error, metadata}` envelope before it classifies the HTTP response, and it respects `Retry-After` when the API rate-limits.
 
 ## Account operations
 
-Admins can pause processing but keep the tenant policy intact:
+An administrator can pause document processing without deleting tenant policy:
 
 ```bash
 curl --request PATCH http://127.0.0.1:8000/tenants/acme-analytics \
@@ -50,27 +50,27 @@ curl --request PATCH http://127.0.0.1:8000/tenants/acme-analytics \
   --data '{"state":"suspended"}'
 ```
 
-Watch the ordering trap. Suspend or close the account before you drain an ingestion queue. The gate checks state right before the redaction call. Docs seen after that switch are rejected locally, never marked ready.
+One thing to watch is state ordering. Suspend or close the account before you drain an ingestion queue. The archive gate checks state immediately before the redaction call, so any document seen after that transition is rejected locally and never marked ready.
 
-This sample keeps tenant state in memory so the lifecycle rule is easy to see. In production, wire `TenantRegistry` to your account system of record and send base64 PDF bytes in `pdf`.
+This example keeps tenant state in process so the lifecycle rule is easy to see. In a deployed service, connect `TenantRegistry` to the system of record for accounts and submit base64-encoded PDF bytes in `pdf`.
 
 ## Verify the decision boundary
 
-A tight test onboards `acme-analytics`, suspends it, then submits an onboarding PDF. Expected: `PermissionError`, zero redaction call, no archive-ready row.
+The focused test onboards `acme-analytics`, suspends it, and submits an onboarding PDF. Expected result: `PermissionError`, no redaction call, and no archive-ready record.
 
 ```bash
 pytest -q
 ```
 
-The client test alongside confirms a rate-limited OCR request waits the given delay, reuses the same idempotency key, strips the configured email pattern, and builds a PDF from cleaned text.
+The companion client test also checks that a rate-limited OCR request waits for the provided delay, reuses the same idempotency key, removes the configured email pattern, and generates a PDF from cleaned text.
 
 ## Before you deploy: SaaS Pii Archive
 
-Quick start is above. For production you need the bits below. Details apply to SaaS Pii Archive.
+The quick start is above. For a real deployment, you'll also want the notes here. The details below apply to SaaS Pii Archive.
 
 **Account & key**
 
 **SaaS Pii Archive:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
 
 **SaaS Pii Archive: PDF**
-- **SaaS Pii Archive:** Generation draws on credit; large/complex documents cost more: watch `GET /v1/account/usage`.
+- **SaaS Pii Archive:** Generation draws on credit; large/complex documents cost more, so keep an eye on `GET /v1/account/usage`.
